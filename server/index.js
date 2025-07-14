@@ -8,7 +8,6 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// ✅ 正確 CORS 設定 (含預檢保險 + header 覆寫保險)
 const corsOptions = {
   origin: 'https://tiara-lin.github.io',
   credentials: true
@@ -17,7 +16,6 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 
-// ⚡️ 額外保險，覆寫 header
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', 'https://tiara-lin.github.io');
   res.header('Access-Control-Allow-Credentials', 'true');
@@ -28,16 +26,14 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 
-// MongoDB connection
+// MongoDB
 let db;
 const client = new MongoClient(process.env.MONGODB_URI || 'mongodb://localhost:27017');
 
 async function connectToMongoDB() {
   try {
     await client.connect();
-    if (!client.topology?.isConnected()) {
-      throw new Error('MongoClient is not connected');
-    }
+    await client.db().command({ ping: 1 });
     db = client.db(process.env.DB_NAME || 'instagram_analytics');
     console.log('✅ Connected to MongoDB');
 
@@ -47,7 +43,7 @@ async function connectToMongoDB() {
     await db.collection('user_sessions').createIndex({ ip_address: 1 });
     await db.collection('user_sessions').createIndex({ session_start: -1 });
   } catch (error) {
-    console.error('MongoDB connection error:', error);
+    console.error('❌ MongoDB connection error:', error);
     throw error;
   }
 }
@@ -56,7 +52,7 @@ function getClientIP(req) {
   return (
     req.headers['x-forwarded-for'] ||
     req.connection.remoteAddress ||
-    req.socket.remoteAddress ||
+    req.socket?.remoteAddress ||
     req.ip
   );
 }
@@ -88,7 +84,6 @@ app.post('/api/track/session', async (req, res) => {
     };
 
     await db.collection('user_sessions').insertOne(sessionData);
-
     res.json({ success: true, session_id: sessionData.session_id });
   } catch (error) {
     console.error('Session tracking error:', error);
@@ -116,7 +111,6 @@ app.post('/api/track/interaction', async (req, res) => {
     };
 
     await db.collection('user_interactions').insertOne(interactionData);
-
     res.json({ success: true, message: 'Interaction tracked successfully' });
   } catch (error) {
     console.error('Interaction tracking error:', error);
@@ -144,7 +138,6 @@ app.post('/api/track/post-view', async (req, res) => {
     };
 
     await db.collection('user_interactions').insertOne(viewData);
-
     res.json({ success: true, message: 'Post view tracked successfully' });
   } catch (error) {
     console.error('Post view tracking error:', error);
@@ -167,7 +160,6 @@ app.get('/api/session/scroll-stats', async (req, res) => {
     ]).toArray();
 
     const result = scrolls[0] || { avgScroll: 0, maxScroll: 0, count: 0 };
-
     res.json({
       success: true,
       data: {
@@ -222,14 +214,8 @@ app.get('/api/posts/stats', async (req, res) => {
   }
 });
 
-app.get('/api/health', async (req, res) => {
-  try {
-    const admin = db.admin();
-    await admin.ping();
-    res.json({ success: true, mongodb_connected: true, timestamp: new Date() });
-  } catch (err) {
-    res.status(503).json({ success: false, error: 'MongoDB not responding', detail: err.message });
-  }
+app.get('/api/health', (req, res) => {
+  res.json({ success: true, message: 'Server is alive', timestamp: new Date() });
 });
 
 process.on('SIGINT', async () => {
@@ -240,9 +226,11 @@ process.on('SIGINT', async () => {
 
 async function startServer() {
   try {
+    console.log('🔌 Connecting to MongoDB...');
     await connectToMongoDB();
+    console.log('🚀 Starting Express...');
     app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
+      console.log(`✅ Server running on port ${PORT}`);
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error);
