@@ -35,7 +35,10 @@ const client = new MongoClient(process.env.MONGODB_URI || 'mongodb://localhost:2
 async function connectToMongoDB() {
   try {
     await client.connect();
-    db = client.db('instagram_analytics');
+    if (!client.topology?.isConnected()) {
+      throw new Error('MongoClient is not connected');
+    }
+    db = client.db(process.env.DB_NAME || 'instagram_analytics');
     console.log('✅ Connected to MongoDB');
 
     await db.collection('user_interactions').createIndex({ timestamp: -1 });
@@ -45,6 +48,7 @@ async function connectToMongoDB() {
     await db.collection('user_sessions').createIndex({ session_start: -1 });
   } catch (error) {
     console.error('MongoDB connection error:', error);
+    throw error;
   }
 }
 
@@ -124,8 +128,7 @@ app.post('/api/track/post-view', async (req, res) => {
   try {
     const ip_address = getClientIP(req);
     const device_info = getDeviceInfo(req);
-    const { post_id, post_username, session_id, view_duration, scroll_percentage, media_type } =
-      req.body;
+    const { post_id, post_username, session_id, view_duration, scroll_percentage, media_type } = req.body;
 
     const viewData = {
       ip_address,
@@ -149,7 +152,6 @@ app.post('/api/track/post-view', async (req, res) => {
   }
 });
 
-// 🔹 統計 final_max_scroll
 app.get('/api/session/scroll-stats', async (req, res) => {
   try {
     const scrolls = await db.collection('user_interactions').aggregate([
@@ -180,7 +182,6 @@ app.get('/api/session/scroll-stats', async (req, res) => {
   }
 });
 
-// 🔹 多篇貼文 stats
 app.get('/api/posts/stats', async (req, res) => {
   try {
     const ids = req.query.ids?.split(',').map(id => id.trim()).filter(Boolean);
@@ -221,15 +222,14 @@ app.get('/api/posts/stats', async (req, res) => {
   }
 });
 
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ success: true, mongodb_connected: !!db, timestamp: new Date() });
-});
-
-// Start server
-app.listen(PORT, async () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  await connectToMongoDB();
+app.get('/api/health', async (req, res) => {
+  try {
+    const admin = db.admin();
+    await admin.ping();
+    res.json({ success: true, mongodb_connected: true, timestamp: new Date() });
+  } catch (err) {
+    res.status(503).json({ success: false, error: 'MongoDB not responding', detail: err.message });
+  }
 });
 
 process.on('SIGINT', async () => {
@@ -237,3 +237,17 @@ process.on('SIGINT', async () => {
   await client.close();
   process.exit(0);
 });
+
+async function startServer() {
+  try {
+    await connectToMongoDB();
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+    });
+  } catch (error) {
+    console.error('❌ Failed to start server:', error);
+    process.exit(1);
+  }
+}
+
+startServer();
