@@ -6,18 +6,17 @@ import { MongoClient } from 'mongodb';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 8080; // Railway 預設使用 8080，注意！
+const PORT = process.env.PORT || 8080;
 
-// ✅ CORS 設定
+// ✅ CORS 設定（放最前面）
 const corsOptions = {
   origin: 'https://tiara-lin.github.io',
   credentials: true
 };
-
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
+app.options('*', cors(corsOptions)); // 處理 preflight request
 
-// ✅ 手動 Header 保險
+// ✅ 手動 header 覆寫保險（緊接在 cors 之後）
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', 'https://tiara-lin.github.io');
   res.header('Access-Control-Allow-Credentials', 'true');
@@ -26,6 +25,7 @@ app.use((req, res, next) => {
   next();
 });
 
+// ✅ 放在 header 設定後
 app.use(express.json());
 
 // ✅ MongoDB 初始化
@@ -70,6 +70,7 @@ function getDeviceInfo(req) {
   };
 }
 
+// ✅ API 路由
 app.post('/api/track/session', async (req, res) => {
   try {
     const ip_address = getClientIP(req);
@@ -213,7 +214,7 @@ app.get('/api/posts/stats', async (req, res) => {
   }
 });
 
-// ✅ 健康檢查 - 改用簡單測試
+// ✅ 健康檢查
 app.get('/api/health', async (req, res) => {
   try {
     const result = await db.listCollections().toArray();
