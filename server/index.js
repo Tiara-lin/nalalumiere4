@@ -6,7 +6,7 @@ import { MongoClient } from 'mongodb';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT ?? 8080;
 
 // ✅ CORS 設定（放最前面）
 const corsOptions = {
@@ -247,3 +247,13 @@ async function startServer() {
 }
 
 startServer();
+
+// ✅ 建議加入更明確的錯誤監聽（避免 crash 無回應）
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('🚨 Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('🔥 Uncaught Exception:', err);
+});
+
