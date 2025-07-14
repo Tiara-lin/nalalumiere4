@@ -6,8 +6,9 @@ import { MongoClient } from 'mongodb';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 8080; // Railway 預設使用 8080，注意！
 
+// ✅ CORS 設定
 const corsOptions = {
   origin: 'https://tiara-lin.github.io',
   credentials: true
@@ -16,6 +17,7 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 
+// ✅ 手動 Header 保險
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', 'https://tiara-lin.github.io');
   res.header('Access-Control-Allow-Credentials', 'true');
@@ -26,14 +28,13 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 
-// MongoDB
+// ✅ MongoDB 初始化
 let db;
-const client = new MongoClient(process.env.MONGODB_URI || 'mongodb://localhost:27017');
+const client = new MongoClient(process.env.MONGODB_URI);
 
 async function connectToMongoDB() {
   try {
     await client.connect();
-    await client.db().command({ ping: 1 });
     db = client.db(process.env.DB_NAME || 'instagram_analytics');
     console.log('✅ Connected to MongoDB');
 
@@ -51,7 +52,7 @@ async function connectToMongoDB() {
 function getClientIP(req) {
   return (
     req.headers['x-forwarded-for'] ||
-    req.connection.remoteAddress ||
+    req.connection?.remoteAddress ||
     req.socket?.remoteAddress ||
     req.ip
   );
@@ -96,8 +97,6 @@ app.post('/api/track/interaction', async (req, res) => {
     const ip_address = getClientIP(req);
     const device_info = getDeviceInfo(req);
     const { action_type, post_id, post_username, session_id, additional_data } = req.body;
-
-    console.log('✅ Received interaction:', req.body);
 
     const interactionData = {
       ip_address,
@@ -214,16 +213,24 @@ app.get('/api/posts/stats', async (req, res) => {
   }
 });
 
-app.get('/api/health', (req, res) => {
-  res.json({ success: true, message: 'Server is alive', timestamp: new Date() });
+// ✅ 健康檢查 - 改用簡單測試
+app.get('/api/health', async (req, res) => {
+  try {
+    const result = await db.listCollections().toArray();
+    res.json({ success: true, collections: result.length, timestamp: new Date() });
+  } catch (err) {
+    res.status(503).json({ success: false, error: 'MongoDB not responding', detail: err.message });
+  }
 });
 
+// ⛔️ SIGINT shutdown
 process.on('SIGINT', async () => {
-  console.log('Shutting down...');
+  console.log('🛑 Gracefully shutting down...');
   await client.close();
   process.exit(0);
 });
 
+// ✅ 啟動伺服器
 async function startServer() {
   try {
     console.log('🔌 Connecting to MongoDB...');
